@@ -1,5 +1,6 @@
 import pygame
 import pygame as pg
+from Tools.demo.spreadsheet import center
 
 width = 700
 height = 450
@@ -27,6 +28,7 @@ player_view = 'rear'
 player_rect = images_dict['player'][player_view].get_rect()
 player_rect.x = 300
 player_rect.y = 300
+
 
 
 pg.init()
@@ -66,7 +68,14 @@ while run:
     screen.fill(background_color)
     screen.blit(images_dict['bg'], (0, 0))
 
+
     screen.blit(images_dict['player'][player_view], player_rect)
+
+    hotel_rect = images_dict['hotel'].get_rect()
+    hotel_rect.x = 350
+    hotel_rect.y = 300
+    screen.blit(images_dict['hotel'], hotel_rect)
+
 
     pygame.display.flip()
 
