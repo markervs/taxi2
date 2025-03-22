@@ -80,11 +80,11 @@ def update_q(state, action, reward, next_step):
     best_next = max(Q_table[next_step])
     Q_table[state][action] += learning_rate * (reward + discount_factor * best_next - Q_table[state][action])
 
-
 def make_step():
     current_state = (player_rect.x, player_rect.y)
     action = choose_action(current_state)
     apply_action(action)
+    draw()
     reward = -1
     episode_end = False
     success = False
@@ -235,11 +235,12 @@ while run:
         pas_rect.y += hotel_rect.height
         continue
 
-
     # Відображення
     screen.fill(background_color)
-    screen.blit(images_dict['bg'], (0, 0))
 
+
+def draw():
+    screen.blit(images_dict['bg'], (0, 0))
 
     screen.blit(images_dict['player'][player_view], player_rect)
     screen.blit(images_dict['hotel'], hotel_rect)
