@@ -1,253 +1,325 @@
-from collections import defaultdict
-from email.policy import default
-
-import pygame
-import pygame as pg
-import random
 import numpy as np
-from Tools.demo.spreadsheet import center
+from collections import defaultdict
+import random
+import pygame as pg
 
-width = 700
+pg.init()
+
+width = 680
 height = 450
+
+# задамо розміри віконця нашої програми
+screen = pg.display.set_mode([width, height])
+
+timer = pg.time.Clock()
 FPS = 60
-background_color = (255, 255, 255)
 
-x_direction = 0
-y_direction = 0
-player_speed = 2
-
+# Завантажимо усі зображення в один словничок,
+# де у якості ключа буде деяка назва зображення,
+# а значенням буде саме підзавантажене зображення
 images_dict = {
-    'bg': pg.image.load('img/Background.png'),
-    'player': {
-        'rear': pg.image.load('img/cab_rear.png'),
-        'left': pg.image.load('img/cab_left.png'),
-        'right': pg.image.load('img/cab_right.png'),
-        'front': pg.image.load('img/cab_front.png'),
-    },
-    'hole': pg.image.load('img/hole.png'),
-    'hotel':pg.transform.scale(pg.image.load('img/hotel.png'),(80, 80)),
-    'pas': pg.image.load('img/passenger.png'),
-    'screen': pg.image.load('img/screenshot.jpg'),
-    't_bg': pg.transform.scale(pg.image.load('img/taxi_background.png'), (80, 45)),
-    'parking': pg.transform.scale(pg.image.load('img/Image20250301115336.png'), (80, 45))
-
+    # фон
+    'background': pg.transform.scale(pg.image.load('img/background.png'), (width, height)),
+    # таксі з різних ракурсів
+    'taxi_rear': pg.image.load('img/cab_rear.png'),
+    'taxi_front': pg.image.load('img/cab_front.png'),
+    'taxi_left': pg.image.load('img/cab_left.png'),
+    'taxi_right': pg.image.load('img/cab_right.png'),
+    # готель
+    'hotel': pg.transform.scale(pg.image.load('img/hotel.png'), (80, 80)),
+    # парковка
+    'parking': pg.transform.scale(pg.image.load('img/parking.png'), (80, 45))
 }
 
-# taxi
-player_view = 'rear'
-player_rect = images_dict['player'][player_view].get_rect()
-player_rect.x = 300
+
+# Створимо функцію для відображення тексту заданого кольору на екрані
+def draw_message(text, color):
+    font = pg.font.SysFont(None, 36)  # Використати системний шрифт розміром 36
+    message = font.render(text, True, color)  # Створити текстове повідомлення заданого кольору
+    screen.blit(message, (350, 150))  # Виведення повідомлення на екран у конкретній позиції
+    pg.display.flip()  # Оновити зображення на екрані, тобто намалювати усі компоненти
+    pg.time.delay(800)  # почекати на паузі. Значення у мілісекундах
+
+
+# З цього місця починається перелік різних змінних, що описують об'єкти гри
+
+
+# Гравець
+# Ця змінна буде відповідати за поточний зовнішній вигляд гравця
+player_view = 'taxi_rear'
+# Отримаємо прямокутник, який відповідає за відображення гравця.
+# Прямокутник складається з координат верхнього лівого кута (x,y) та довжини (width) і висоти (height)
+player_rect = images_dict[player_view].get_rect()
+# Задамо початкові координати гравця
+player_rect.x = 320
 player_rect.y = 300
 
-hotel_rect = images_dict['hotel'].get_rect()
+# Готель
+hotel_img = images_dict['hotel']
+hotel_rect = hotel_img.get_rect()
+# Парковка при готелі
+parking_img = images_dict['parking']
+parking_rect = parking_img.get_rect()
+
+# Задамо перелік з 4 можливих позицій готелю. Кожен елемент масиву - це пара координат (X,Y)
 hotel_positions = [
     (60, 30),
     (555, 30),
     (60, 250),
-    (555, 250)
+    (555, 250),
 ]
-pas_img = images_dict['pas']
-pas_rect = pas_img.get_rect()
-# pas_positions = [
-#     (60, 30),
-#     (555, 30),
-#     (60, 365),
-#     (555, 250)
-# ]
+
+# Випадковим чином виберемо пару координат і задамо їх готелю
+(hotel_rect.x, hotel_rect.y) = random.choice(hotel_positions)
+# Місце розташування парковки у нас завжди буде під зображенням готелю. 
+# То ж координата "X" у них буде співпадати, а по "Y" необхідно змістити парковку рівно на висоту готелю.
+(parking_rect.x, parking_rect.y) = (hotel_rect.x, hotel_rect.y + hotel_rect.height)
 
 
-hotel_rect.x, hotel_rect.y = random.choice(hotel_positions)
+#######################
+# З цього місця починаються зміни у коді відносно попередньої реалізації
 
-pas_rect.x, pas_rect.y = random.choice(hotel_positions)
-pas_rect.y += hotel_rect.height
-# while (pas_rect.x, pas_rect.y) == (hotel_rect.x, hotel_rect.y):
-#     pass
+# Створимо функцію для застосування дії до гравця.
+# Тобто змінити положення гравця в залежності від значення змінної "action".
+def apply_action(action):
+    if action is None:
+        return
 
-actions = [0, 1, 2, 3] # 0 - right, 1 - left, 2 - up, 3 - bottom
-Q_table = defaultdict(lambda: [0, 0, 0, 0]) # (300, 300) : [-2, -3, 5, 3]
+    # Змінні для задання напрямку руху гравця
+    x_direction = 0
+    y_direction = 0
+    global player_view
 
+    # Перетворюємо значення змінної "action" у напрямок руху і задаємо відповідне зображення гравцю.
+    # Можливі значення змінної "action": 0 - праворуч, 1 - ліворуч, 2 - вгору, 3 - вниз.
+    if action == 0:
+        x_direction = 1
+        player_view = 'taxi_right'
+    elif action == 1:
+        x_direction = -1
+        player_view = 'taxi_left'
+    elif action == 2:
+        y_direction = -1
+        player_view = 'taxi_rear'
+    elif action == 3:
+        y_direction = 1
+        player_view = 'taxi_front'
+
+    # Прорахуємо нову позицію гравця
+    # Переміщення по горизонталі (по X) робимо на ширину гравця.
+    # Переміщення по вертикалі (по Y) робимо на висоту гравця.
+    new_x = player_rect.x + player_rect.width * x_direction
+    new_y = player_rect.y + player_rect.height * y_direction
+    # Застосовуємо нові координати, якщо гравець не виходить за межі екрану
+    if 0 < new_x < width - player_rect.width:
+        player_rect.x = new_x
+    if 0 < new_y < height - player_rect.height:
+        player_rect.y = new_y
+
+
+# Створимо функцію для відображення усіх елементів гри на екрані.
+def draw_elements():
+    # заповнимо фон віконця програми зображенням нашого поля
+    screen.blit(images_dict['background'], (0, 0))
+    # покажемо готель та парковку на екрані
+    screen.blit(hotel_img, hotel_rect)
+    screen.blit(parking_img, parking_rect)
+    # покажемо гравця на екрані
+    screen.blit(images_dict[player_view], player_rect)
+    # Оновити зображення на екрані, тобто намалювати усі компоненти
+    pg.display.flip()
+
+
+# Створимо функцію для перевірки, чи відбулась аварія. У випадку аварії повертає True, інакше False.
+def is_crash():
+    # Перевіримо, чи наїхав гравець на клумбу
+    # Оскільки за відображення гравця відповідає
+    # прямокутне зображення - беремо значення кольору у кожній точці всередині прямокутника
+    for x in range(player_rect.x, player_rect.topright[0], 1):
+        for y in range(player_rect.y, player_rect.bottomleft[1], 1):
+            # Перевірка чи колір пікселя відповідає кольору бордюру
+            if screen.get_at((x, y)) == (220, 215, 177):
+                return True
+
+    # Перевірка чи врізався гравець у готель
+    if hotel_rect.colliderect(player_rect):
+        return True
+    return False
+
+
+#######################
+# Q-Learning
+
+
+# Створимо масив з переліку усіх можливих напрямків руху гравця
+actions = [0, 1, 2, 3]  # 0 - праворуч, 1 - ліворуч, 2 - вгору, 3 - вниз.
+
+# Створимо змінну для майбутньої Q-таблиці, яка фактично представляє собою карту рухів гравця у кожному секторі поля.
+# Щоб спростити і прискорити процес навчання, розкреслимо наше поле на клітинки, кожна з яких за розмірами співпадає з розмірами гравця.
+# Потрапляючи у кожну з клітинок, гравець приймає рішення, куди рухатись далі (1 з 4 напрямків).
+# Таким чином, Q-таблиця - це словничок:
+# * у якості ключа - пара координат (X,Y) лівого верхнього кута гравця;
+# * у якості значення - масив з 4 значень. Кожне значення - це деяка числова оцінка вибору наступного напрямку. Кожна позиція (індекс) елементу масиву відповідає напрямку руху.
+# Наприклад, як виглядає один з елементів Q-таблиці:
+# (360, 200): [-2, -3, 5, 30]
+# +--------------------------------------------+-----------------------------------------------+
+# |                                            | Оцінка напрямку руху                          |
+# |Координата лівого верхнього кута гравця(X,Y)+-------------+------------+----------+---------+
+# |                                            | праворуч (0)| ліворуч (1)| вгору (2)| вниз (3)|
+# +--------------------------------------------+-------------+------------+----------+---------+
+# | (360, 200)                                 | -2          | -3         | 5        | 30      |
+# +--------------------------------------------+-------------+------------+----------+---------+
+# | (360, 175)                                 | 15          | 2          | -10      | 6       |
+# +--------------------------------------------+-------------+------------+----------+---------+
+# 
+# Принцип використання: який з напрямків має найбільшу оцінку, у такому напрямку і будемо робити наступний крок.
+Q_table = defaultdict(lambda: [0, 0, 0, 0])
+
+# Деякі спеціальні математичні параметри для навчання. Впливають на формування оцінки подальшого руху.
 learning_rate = 0.9
 discount_factor = 0.9
 epsilon = 0.1
 
+
+# Створимо функцію для вибору напрямку руху в залежності від поточної позиції (state).
 def choose_action(state):
+    # epsilon - це деякий корегуючий параметр, який вносить випадковість у вибір напрямку. 
+    # Тобто іноді гравець буде рухатись у випадковому напрямку.
     if random.random() < epsilon:
         return random.choice(actions)
     else:
+        # Напрямок руху вибирається як індекс елементу з найбільшим значенням у масиві.
+        # Тобто команда Q_table[state] повертає масив значень оцінок напрямку руху і ми беремо індекс (0,1,2 або 3) найбільшого елементу.
+        # Наприклад, поточні координати верхнього лівого кута гравця state = (360,200).
+        # Звертаємось до нашого словничка і отримаємо масив оцінок напрямків: Q_table[state] = [-2, -3, 5, 30]
+        # Беремо найбільший елемент цього масиву (число 30). Його позиція у масиві 3 (нагадую, нумерація елементів масиву починається з нуля).
+        # Отже у даному прикладі функція поверне число 3, що означає "далі необхідно рухатись вниз".
         return np.argmax(Q_table[state])
 
-def update_q(state, action, reward, next_step):
-    best_next = max(Q_table[next_step])
+
+# Створимо функцію, яка буду заповнювати значення у словничку Q_table для заданої координати (state) і напрямку руху (action).
+# Також функція приймає деяке числове значення "винагороди" (reward) за прийняте рішення і координати наступного кроку (next_state).
+def update_q(state, action, reward, next_state):
+    # Беремо масив оцінок для наступної координати (next_state) зі словничка і вибираємо найбільшу оцінку.
+    best_next = max(Q_table[next_state])
+    # Задаємо значення оцінки у словничок для поточної позиції гравця (state) та вибраного напрямку руху (action) за спеціальною формулою.
     Q_table[state][action] += learning_rate * (reward + discount_factor * best_next - Q_table[state][action])
 
+
+#######################
+
+
+# Створимо функцію, яка буде навчати гравця робити "кроки". 
+# На кожному кроці ми будемо оцінювати поведінку гравця (подібно суддям на змаганнях) і заповнювати словничок Q_table.
+# За кожен крок гравцю видається певна винагорода (reward), яка безпосередньо впливає на оцінку його дій.
+# У випадку аварії (зіткнення з клумбою чи готелем), нагорода = -100.
+# У випадку перемоги (заїзд на парковку), нагорода = 100.
 def make_step():
+    # Отримуємо поточну позицію гравця (лівий верхній кут його прямокутника)
     current_state = (player_rect.x, player_rect.y)
+
+    # Вибираємо напрямок подальшого руху
     action = choose_action(current_state)
+
+    # застосовуємо напрямок руху, тобто змінюємо координати розташування гравця.
     apply_action(action)
-    draw()
-    reward = -1
+
+    # Перемальовуємо усі ігрові елементи.
+    draw_elements()
+
+    # -------------------------------
+    # Розрахунок винагороди за зроблений крок (за вибраний напрямок руху).
+    # -------------------------------
+    reward = -1  # невеликий штраф за кожен крок (для стимулювання ефективності)
     episode_end = False
     success = False
 
+    # Перевіримо, чи відбулась аварія (гравець наїхав на клумбу або врізався у готель)
     if is_crash():
+        # Відбулась аварія, тож винагорода = -100
         reward = -100
         episode_end = True
 
+    # Перевірка чи заїхав гравець повністю на парковку
     if parking_rect.contains(player_rect):
-        # draw_message("You win!!", pg.Color('green'))
-        print("Win!")
+        print("Перемога!")
+        # Перемога, то ж винагорода = 100
         reward = 100
         episode_end = True
         success = True
-    next_state = (player_rect, player_rect.y)
 
+    # Отримуємо нове положення гравця
+    next_state = (player_rect.x, player_rect.y)
+
+    # Оновлюємо словничок Q_table, тобто 
+    # для попереднього розташування гравця (current_state) записуємо оцінку (reward) вибраного напрямку руху (action) з урахуванням наступного положення (next_state)
     update_q(current_state, action, reward, next_state)
 
     return (episode_end, success)
 
 
+# Основний цикл навчання
+num_episodes = 300
+max_steps = 50
+for episode in range(num_episodes):
+    # Кожен епізод починаємо зі стартової позиції
+    player_rect.x = 320
+    player_rect.y = 300
+    for step in range(max_steps):
+        (episode_end, success) = make_step()
+        if episode_end:
+            print(success)
+            break
 
+print(Q_table)
 
+draw_message("Таксі навчилось!", pg.Color('blue'))
 
+# Тестуємо отриману мапу рухів Q_table
+# Переводимо гравця у стартову позицію
+player_rect.x = 320
+player_rect.y = 300
+player_view = 'taxi_rear'
 
+# задамо нашу корегуючу змінну від'ємним числом, щоб прибрати випадкову складову і гравець рухався виключно по мапі Q_table.
+epsilon = -1
 
-def apply_action(action):
-    global x_direction, y_direction, player_view
-    x_direction = 0
-    y_direction = 0
-    if action == 0:
-        x_direction = 1
-        player_view = 'right'
-    elif action == 1:
-        x_direction = -1
-        player_view = 'left'
-    elif action == 2:
-        y_direction = -1
-        player_view = 'rear'
-    elif action == 3:
-        y_direction = 1
-        player_view = 'front'
+# Показуємо усі елементи на екрані
+draw_elements()
 
-def draw_message(text, color):
-    font = pg.font.SysFont(None, 36)
-    message = font.render(text, True, color)
-    screen.blit(message, (300, 150))
-    pg.display.flip()
-    pg.time.delay(1500)
-
-
-
-def is_crash():
-    for x in range(player_rect.x, player_rect.topright[0], 1):
-        for y in range(player_rect.y, player_rect.bottomleft[1], 1):
-            try:
-                if screen.get_at((x,y)) == (220, 215, 177):
-                    return True
-            except IndexError:
-                print("pixel index out of range")
-    return False
-
-
-#parking
-parking_img = images_dict['parking']
-parking_rect = parking_img.get_rect()
-parking_rect.x, parking_rect.y = hotel_rect.x, hotel_rect.y + hotel_rect.height
-
-
-
-pg.init()
-screen = pg.display.set_mode([width, height])
-
-timer = pg.time.Clock()
-
+# встановимо маленьку частоту кадрів, щоб сповільнити анімацію рухів гравця і побачити усі його кроки
+FPS = 2
 run = True
+
 while run:
     timer.tick(FPS)
-    # Обробка подій
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            run = False
-            # pygame.quit()
-            # exit()
-        # if event.type == pg.KEYDOWN:
-        #     if event.key == pg.K_RIGHT:
-        #         x_direction = 1
-        #         player_view = 'right'
-        #     elif event.key == pg.K_LEFT:
-        #         x_direction = -1
-        #         player_view = 'left'
-        #     elif event.key == pg.K_UP:
-        #         y_direction = -1
-        #         player_view = 'rear'
-        #     elif event.key == pg.K_DOWN:
-        #         y_direction = 1
-        #         player_view = 'front'
 
-    # keys_klava = pg.key.get_pressed()
-    # if keys_klava[pg.K_RIGHT]:
-    #     x_direction = 1
-    #     player_view = 'right'
-    # elif keys_klava[pg.K_LEFT]:
-    #     x_direction = -1
-    #     player_view = 'left'
-    # elif keys_klava[pg.K_UP]:
-    #     y_direction = -1
-    #     player_view = 'rear'
-    # elif keys_klava[pg.K_DOWN]:
-    #     y_direction = 1
-    #     player_view = 'front'
+    # Отримуємо поточну позицію гравця (лівий верхній кут його прямокутника)
+    current_state = (player_rect.x, player_rect.y)
 
+    # Вибираємо подальший напрямок руху як індекс найбільшої оцінки напрямку у словничку Q_table для поточної позиції гравця.
+    action = choose_action(current_state)
+    # застосовуємо напрямок руху, тобто змінюємо координати розташування гравця.
+    apply_action(action)
 
+    # Перемальовуємо усі ігрові елементи.
+    draw_elements()
 
-
-    # Поновлення
-    player_rect.x += player_speed * x_direction
-    player_rect.y += player_speed * y_direction
-    x_direction = 0
-    y_direction = 0
-
+    # Перевіримо, чи відбулась аварія (гравець наїхав на клумбу або врізався у готель)
     if is_crash():
-        print("IS CRASH")
-        draw_message("You crash!!", pg.Color('red'))
-        player_view = 'rear'
-        player_rect.x = 300
-        player_rect.y = 300
+        draw_message("Аварія!", pg.Color('red'))
+        run = False
+        break
 
-        hotel_rect.x, hotel_rect.y = random.choice(hotel_positions)
-        parking_rect.x, parking_rect.y = hotel_rect.x, hotel_rect.y + hotel_rect.height
-        pas_rect.x, pas_rect.y = random.choice(hotel_positions)
-        pas_rect.y += hotel_rect.height
-        continue
-
-
-    if player_rect.colliderect(pas_rect):
-        pas_rect.x, pas_rect.y = player_rect.x, player_rect.y
-
+    # Перевірка чи заїхав гравець повністю на парковку
     if parking_rect.contains(player_rect):
-        draw_message("You win!!", pg.Color('green'))
-        player_view = 'rear'
-        player_rect.x = 300
-        player_rect.y = 300
+        draw_message("Перемога!", pg.Color('green'))
+        run = False
+        break
 
-        hotel_rect.x, hotel_rect.y = random.choice(hotel_positions)
-        parking_rect.x, parking_rect.y = hotel_rect.x, hotel_rect.y + hotel_rect.height
-        pas_rect.x, pas_rect.y = random.choice(hotel_positions)
-        pas_rect.y += hotel_rect.height
-        continue
+    # цикл для закриття віконця при натисканні на червоний хрестик
+    for event in pg.event.get():
+        if event.type == pg.QUIT:
+            run = False
 
-    # Відображення
-    screen.fill(background_color)
-
-
-def draw():
-    screen.blit(images_dict['bg'], (0, 0))
-
-    screen.blit(images_dict['player'][player_view], player_rect)
-    screen.blit(images_dict['hotel'], hotel_rect)
-    screen.blit(parking_img, parking_rect)
-    screen.blit(images_dict['pas'], pas_rect)
-
-    pygame.display.flip()
-
-
-pygame.quit()
+pg.quit()

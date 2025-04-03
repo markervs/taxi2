@@ -28,7 +28,7 @@ images_dict = {
     'pas': pg.image.load('img/passenger.png'),
     'screen': pg.image.load('img/screenshot.jpg'),
     't_bg': pg.transform.scale(pg.image.load('img/taxi_background.png'), (80, 45)),
-    'parking': pg.transform.scale(pg.image.load('img/Image20250301115336.png'), (80, 45))
+    'parking': pg.transform.scale(pg.image.load('img/parking.png'), (80, 45))
 
 }
 
